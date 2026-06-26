@@ -1,0 +1,27 @@
+export type Messages = {
+  common: Record<string, string>;
+  nav: Record<string, string>;
+  layout: Record<string, string>;
+  theme: Record<string, string>;
+  lang: Record<string, string>;
+  badge: Record<string, string>;
+  login: Record<string, string>;
+  statusBar: Record<string, string>;
+  overview: Record<string, string>;
+  hourlyChart: Record<string, string>;
+  activity: Record<string, string>;
+  leaders: Record<string, string>;
+  discover: Record<string, string>;
+  positions: Record<string, string>;
+  orders: Record<string, string>;
+  risk: Record<string, string>;
+  settings: Record<string, string>;
+  account: Record<string, string>;
+  table: Record<string, string>;
+  confirm: Record<string, string>;
+  trader: Record<string, string>;
+  modal: Record<string, string>;
+  docs: Record<string, string>;
+  pnl: Record<string, string>;
+  apiMsg: Record<string, string>;
+};

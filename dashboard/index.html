@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#06080f" />
+    <meta name="color-scheme" content="dark light" />
+    <script>
+      (function () {
+        try {
+          var tk = "polymirror_theme";
+          var t = localStorage.getItem(tk);
+          if (t !== "light" && t !== "dark") {
+            t = window.matchMedia("(prefers-color-scheme: light)").matches ? "light" : "dark";
+          }
+          document.documentElement.dataset.theme = t;
+          document.documentElement.style.colorScheme = t;
+          var meta = document.querySelector('meta[name="theme-color"]');
+          if (meta) meta.setAttribute("content", t === "light" ? "#f1f5f9" : "#06080f");
+        } catch (e) {}
+        try {
+          var lk = "polymirror_locale";
+          var loc = localStorage.getItem(lk);
+          var supported = { zh: 1, en: 1, "zh-TW": 1, ja: 1, ko: 1 };
+          if (!supported[loc]) {
+            var nav = (navigator.language || "zh").toLowerCase();
+            if (nav.indexOf("zh-tw") === 0 || nav.indexOf("zh-hk") === 0) loc = "zh-TW";
+            else if (nav.indexOf("zh") === 0) loc = "zh";
+            else if (nav.indexOf("ja") === 0) loc = "ja";
+            else if (nav.indexOf("ko") === 0) loc = "ko";
+            else if (nav.indexOf("en") === 0) loc = "en";
+            else loc = "zh";
+          }
+          document.documentElement.lang =
+            loc === "zh-TW" ? "zh-Hant" : loc === "zh" ? "zh-Hans" : loc;
+        } catch (e) {}
+      })();
+    </script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <title>PolyMirror Dashboard</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

@@ -1,0 +1,14 @@
+node_modules
+dist
+.git
+.github
+.env
+config.yaml
+data
+*.db
+*.log
+*.md
+!README.md
+tests
+vitest.config.ts
+coverage

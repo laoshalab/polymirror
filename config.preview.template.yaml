@@ -1,0 +1,169 @@
+# =============================================================================
+# PolyMirror — Preview 配置模板 (config.preview.template.yaml)
+# =============================================================================
+#
+# 用法:
+#   cp config.preview.template.yaml config.yaml
+#   编辑 config.yaml 中的 Leader 地址或用户名
+#   cp .env.example .env 并填入你的钱包（preview 也需要，用于校验配置）
+#   npm run dev
+#
+# 如何找 Leader 的 proxy 地址:
+#   1. 打开 https://polymarket.com/@<用户名> 个人页
+#   2. 浏览器 DevTools → Network → 筛选 "activity" 或 "profile"
+#   3. 请求参数 user=0x... 即为 proxy wallet（40 位 hex）
+#   或直接填 username，启动时由 Gamma API 自动解析
+#
+# 数据 API 验证（可选）:
+#   curl "https://data-api.polymarket.com/activity?user=0xYOUR_LEADER&limit=5"
+#
+# 重要: 保持 preview_mode: true，直到完成 docs/PREVIEW_CHECKLIST.md
+# =============================================================================
+
+global:
+  # 轮询间隔（毫秒）。Leader 越多可适当加大，避免 API 限流
+  poll_interval_ms: 5000
+
+  # 每次拉取每个 Leader 最近 N 条 activity
+  activity_limit: 100
+
+  # ★ Preview 模式 — 只模拟下单，不调用 CLOB 实盘
+  preview_mode: true
+
+  # 只跟 TRADE 类型（推荐 true）
+  copy_trades_only: true
+
+  # 忽略超过 N 小时的历史成交（重启后不会跟旧单）
+  max_trade_age_hours: 1
+
+  # 同一 Leader 同一 token 在 N 毫秒内重复 BUY 去重
+  buy_dedup_window_ms: 60000
+
+  # 小单合并窗口（毫秒）。0 = 关闭；Leader 连续碎单时可设 3000–5000
+  trade_aggregation_window_ms: 0
+
+  # 健康检查 HTTP 端口，GET /health ；0 = 关闭
+  health_port: 8080
+
+  risk:
+    enable_copy_trading: true
+
+    # 日亏损达到 starting_capital 的 N% 时触发 Kill Switch（UTC 日切重置）
+    daily_loss_cap_pct: 20
+
+    # Kill Switch 计算基准资金（USD），填你计划用于跟单的本金估算
+    starting_capital_usd: 500
+
+    # 全局单日最大跟单成交额（USD）
+    max_daily_volume_usd: 500
+
+    # 最多同时持有多少个不同 token 仓位
+    max_open_markets: 15
+
+    # 单笔跟单上限（USD）
+    max_order_usd: 25
+
+    # 低于此金额的跟单会 skip
+    min_order_usd: 1
+
+    # 实盘滑点容忍（绝对值，0.03 = 3¢）。Preview 不检查 orderbook
+    slippage_tolerance: 0.03
+
+    # 单 token 跨 Leader 合计敞口上限（USD），0 = 不限制
+    max_position_per_token_usd: 0
+
+    # leader.limits.max_position_usd 的估值口径：
+    #   market（默认）= 持仓股数 × 当前价（盯市）
+    #   cost          = 持仓股数 × 建仓均价（已投入本金）
+    position_cap_basis: market
+
+    # Live：SELL 时按 CLOB 链上余额校验（多 Leader 按比例分配）
+    sync_wallet_balance: true
+
+  execution:
+    # GTC = 限价挂单 | FAK/FOK = 市价类（实盘）
+    order_type: GTC
+    retry_limit: 3
+    network_retry_limit: 3
+    # GTC 下单后轮询成交的最长等待（毫秒）
+    gtc_fill_timeout_ms: 10000
+    # 超过此时间的 pending GTC 记录会被清理（小时）
+    pending_order_max_age_hours: 48
+
+  conflict:
+    # 多 Leader 同 token 反向时的策略:
+    #   skip_both — 两笔都跳过
+    #   net       — 允许（可能对冲）
+    #   priority_leader — 按 weight / priority 列表决定
+    mode: priority_leader
+    # 显式优先级（Leader id 列表，靠前优先）。空则按 weight
+    priority: []
+
+  notify:
+    # 需在 .env 配置 TELEGRAM_BOT_TOKEN + TELEGRAM_CHAT_ID
+    telegram_on_copy: true
+    telegram_on_error: true
+    telegram_on_kill_switch: true
+
+# =============================================================================
+# Leaders — 至少启用一个
+# =============================================================================
+leaders:
+
+  # --- 方式 A: 直接填 proxy 地址（推荐，启动更快）---
+  - id: leader_main
+    # ↓↓↓ 替换为真实 Leader 的 proxy wallet（0x + 40 hex）↓↓↓
+    address: "0xREPLACE_WITH_LEADER_PROXY_ADDRESS___________"
+    enabled: true
+    weight: 1.0
+    strategy:
+      # PERCENTAGE — 跟 Leader 成交额的 copy_size%
+      # FIXED       — 每笔固定 USD
+      # ADAPTIVE    — 大单缩小比例、小单放大（见下方可选参数）
+      type: PERCENTAGE
+      copy_size: 10.0
+      # tiered_multipliers: "0-50:1,50-200:0.75,200+:0.5"
+      # adaptive_min_percent: 5
+      # adaptive_max_percent: 20
+      # adaptive_threshold_usd: 500
+    limits:
+      max_order_usd: 20
+      max_position_usd: 150
+      max_daily_volume_usd: 300
+    filters:
+      min_price: 0.05
+      max_price: 0.85
+      sides: ["BUY", "SELL"]
+      # markets_blocklist: ["sports", "nba"]
+      # markets_allowlist: ["election", "fed"]
+
+  # --- 方式 B: Polymarket 用户名（启动时 Gamma API 解析为 proxy）---
+  - id: leader_username_example
+    # ↓↓↓ 填 @ 后面的用户名，不要带 @ ↓↓↓
+    username: "REPLACE_POLymarket_USERNAME"
+    enabled: false
+    weight: 0.8
+    strategy:
+      type: PERCENTAGE
+      copy_size: 5.0
+    limits:
+      max_order_usd: 15
+      max_position_usd: 100
+    filters:
+      min_price: 0.08
+      max_price: 0.80
+      sides: ["BUY"]
+
+  # --- 方式 C: 第二个地址 Leader（多 Leader 示例）---
+  - id: leader_secondary
+    address: "0xREPLACE_OPTIONAL_SECOND_LEADER_______________"
+    enabled: false
+    weight: 0.5
+    strategy:
+      type: FIXED
+      copy_size: 5.0
+    limits:
+      max_order_usd: 10
+      max_daily_volume_usd: 100
+    filters:
+      sides: ["BUY", "SELL"]

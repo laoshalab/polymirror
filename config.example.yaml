@@ -1,0 +1,101 @@
+# Multi-account format (optional — legacy global+leaders above still works):
+#
+# defaults:
+#   global:
+#     poll_interval_ms: 5000
+#     preview_mode: true
+#     health_port: 8081
+#     risk: { ... }
+# accounts:
+#   - id: main
+#     label: 主账户
+#     enabled: true
+#     wallet_env: MAIN          # POLYMARKET_PRIVATE_KEY_MAIN, POLYMARKET_ADDRESS_MAIN
+#     leaders: [ ... ]
+#   - id: sub
+#     label: 子账户
+#     wallet_env: SUB
+#     global:
+#       preview_mode: true
+#       risk: { max_daily_volume_usd: 300 }
+#     leaders: [ ... ]
+
+global:
+  poll_interval_ms: 5000
+  activity_limit: 100
+  preview_mode: true
+  copy_trades_only: true
+  max_trade_age_hours: 1
+  buy_dedup_window_ms: 60000
+  trade_aggregation_window_ms: 0
+  health_port: 8080
+
+  risk:
+    enable_copy_trading: true
+    daily_loss_cap_pct: 20
+    starting_capital_usd: 1000
+    max_daily_volume_usd: 2000
+    max_open_markets: 30
+    max_order_usd: 50
+    min_order_usd: 1
+    slippage_tolerance: 0.03
+    # 钱包级「单 token 总敞口」上限（合计所有 leader）。0 = 关闭。
+    # 注意：leader 的 limits.max_position_usd 只约束「单个 leader 对该 token」的持仓；
+    # 若多个 leader 跟同一 token、想给整个钱包封顶，必须在这里设一个 > 0 的值。
+    max_position_per_token_usd: 0
+    # leader.limits.max_position_usd 的估值口径：
+    #   market（默认）= 持仓股数 × 当前成交价（盯市，随价格波动）
+    #   cost          = 持仓股数 × 建仓均价（已投入本金口径，更稳定）
+    position_cap_basis: market
+    sync_wallet_balance: true
+
+  execution:
+    order_type: GTC
+    retry_limit: 3
+    network_retry_limit: 3
+    gtc_fill_timeout_ms: 10000
+    pending_order_max_age_hours: 48
+
+  conflict:
+    mode: priority_leader
+    priority: []
+
+  notify:
+    telegram_on_copy: true
+    telegram_on_error: true
+    telegram_on_kill_switch: true
+
+  # 网络代理（中国大陆访问 Polymarket API 通常需要）
+  # mode: none | static（固定 IP）| dynamic（动态 IP，每次请求轮换）
+  proxy:
+    mode: none
+    static_url: "http://127.0.0.1:7890"
+    dynamic_url: ""
+    dynamic_rotate_session: true
+
+leaders:
+  - id: example_whale
+    address: "0x0000000000000000000000000000000000000001"
+    enabled: false
+    weight: 1.0
+    strategy:
+      type: PERCENTAGE
+      copy_size: 10.0
+      # tiered_multipliers: "0-100:1,100-500:0.5,500+:0.25"
+    limits:
+      max_order_usd: 25
+      max_position_usd: 200
+      max_daily_volume_usd: 500
+    filters:
+      min_price: 0.03
+      max_price: 0.70
+      sides: ["BUY", "SELL"]
+
+  # Resolve proxy address from Polymarket username at startup:
+  # - id: polymarket_user
+  #   username: "some-trader"
+  #   enabled: false
+  #   weight: 1.0
+  #   strategy:
+  #     type: PERCENTAGE
+  #     copy_size: 5.0
