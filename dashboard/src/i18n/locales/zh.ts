@@ -377,6 +377,10 @@ export const zh: Messages = {
     previewSimSection: "Preview 模拟（非真实 USDC）",
     previewExposure: "模拟敞口",
     previewLocalPositions: "模拟持仓数",
+    previewMarketValue: "模拟市值",
+    previewUnrealizedPnl: "模拟未实现 PnL",
+    previewPricedPositions: "已估值持仓",
+    previewUnpricedSuffix: "未估值",
     hintPreviewZero:
       "上方数值来自 Polymarket 链上查询（CLOB 可用 USDC + Data API 持仓）。Preview 模式下引擎跟单只写入本地 preview.db，不会动用官网余额。",
     hintVerifyAddress:

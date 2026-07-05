@@ -607,6 +607,35 @@ export function AccountPage() {
                   <div className="account-stat-label">{t("account.previewExposure")}</div>
                   <div className="account-stat-value">${data.engine.localExposureUsd.toFixed(2)}</div>
                 </div>
+                <div className="account-stat">
+                  <div className="account-stat-label">{t("account.previewMarketValue")}</div>
+                  <div className="account-stat-value">
+                    {formatUsd(data.engine.simulatedPositionsValueUsd)}
+                  </div>
+                </div>
+                <div className="account-stat">
+                  <div className="account-stat-label">{t("account.previewUnrealizedPnl")}</div>
+                  <div
+                    className="account-stat-value"
+                    style={{
+                      color:
+                        data.engine.simulatedUnrealizedPnlUsd >= 0
+                          ? "var(--green)"
+                          : "var(--red)",
+                    }}
+                  >
+                    {formatUsd(data.engine.simulatedUnrealizedPnlUsd)}
+                  </div>
+                </div>
+                <div className="account-stat">
+                  <div className="account-stat-label">{t("account.previewPricedPositions")}</div>
+                  <div className="account-stat-value">
+                    {data.engine.simulatedPricedPositionCount}
+                    {data.engine.simulatedUnpricedPositionCount > 0
+                      ? ` / ${data.engine.simulatedUnpricedPositionCount} ${t("account.previewUnpricedSuffix")}`
+                      : ""}
+                  </div>
+                </div>
               </div>
             </>
           )}

@@ -1,6 +1,7 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { apiFetch, type AuditRow, type DailyStatsResponse, type StatusResponse } from "../api/client";
+import { fetchWalletProfile } from "../api/wallet";
 import { DataCard } from "../components/ui/DataCard";
 import { PageHeader } from "../components/ui/PageHeader";
 import { OverviewHourlyChart } from "../components/OverviewHourlyChart";
@@ -45,8 +46,17 @@ export function OverviewPage() {
   });
 
   const s = status.data;
+  const wallet = useQuery({
+    queryKey: ["wallet-overview", s?.accountId],
+    queryFn: fetchWalletProfile,
+    enabled: s?.previewMode === true,
+    refetchInterval: 15000,
+  });
   const today = stats.data?.today;
   const pnl = today?.realizedPnl ?? 0;
+  const simulatedPnl = wallet.data?.engine.simulatedUnrealizedPnlUsd;
+  const pricedPositions = wallet.data?.engine.simulatedPricedPositionCount ?? 0;
+  const unpricedPositions = wallet.data?.engine.simulatedUnpricedPositionCount ?? 0;
 
   return (
     <>
@@ -129,6 +139,20 @@ export function OverviewPage() {
             value={fmtUsd(pnl)}
             variant={pnl >= 0 ? "positive" : "negative"}
           />
+          {s?.previewMode && (
+            <DataCard
+              label={t("account.previewUnrealizedPnl")}
+              value={simulatedPnl === undefined ? t("common.loading") : fmtUsd(simulatedPnl)}
+              variant={simulatedPnl === undefined || simulatedPnl >= 0 ? "positive" : "negative"}
+              hint={`${t("account.previewPricedPositions")} ${pricedPositions}${
+                unpricedPositions > 0
+                  ? ` / ${unpricedPositions} ${t("account.previewUnpricedSuffix")}`
+                  : ""
+              }`}
+              linkTo="/account"
+              linkLabel={t("common.view")}
+            />
+          )}
           <DataCard
             label={t("overview.pendingGtc")}
             value={s?.pendingOrders ?? 0}

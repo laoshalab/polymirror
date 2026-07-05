@@ -26,6 +26,10 @@ export interface WalletProfile {
     todayCopyCount: number;
     localPositionCount: number;
     localExposureUsd: number;
+    simulatedPositionsValueUsd: number;
+    simulatedUnrealizedPnlUsd: number;
+    simulatedPricedPositionCount: number;
+    simulatedUnpricedPositionCount: number;
     killSwitchActive: boolean;
   };
   polymarketPositions: {
@@ -44,6 +48,16 @@ export interface WalletProfile {
     tokenId: string;
     shares: number;
     avgEntryPrice: number;
+  }[];
+  simulatedPositions: {
+    leaderId: string;
+    tokenId: string;
+    shares: number;
+    avgEntryPrice: number;
+    costUsd: number;
+    currentPrice: number | null;
+    currentValueUsd: number | null;
+    unrealizedPnlUsd: number | null;
   }[];
   recentTrades: {
     timestamp: number;

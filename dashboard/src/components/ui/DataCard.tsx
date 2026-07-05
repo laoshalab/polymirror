@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { useT } from "../i18n/I18nProvider";
+import { useT } from "../../i18n/I18nProvider";
 
 interface DataCardProps {
   label: string;

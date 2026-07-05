@@ -1,5 +1,9 @@
 import { fetchWalletCollateral, type CollateralSource } from "../executor/balance.js";
 import { getPublicClient } from "../sdk/public-client.js";
+import {
+  buildPreviewValuation,
+  type PreviewValuation,
+} from "./preview-valuation.js";
 
 export interface PolymarketPosition {
   conditionId?: string;
@@ -78,6 +82,21 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
   const store = ctx.store;
   const today = store.getTodayStats();
   const localPositions = store.listPositions();
+  const emptyPreviewValuation: PreviewValuation = {
+    localExposureUsd: localPositions.reduce((s, p) => s + p.shares * p.avgEntryPrice, 0),
+    simulatedPositionsValueUsd: 0,
+    simulatedUnrealizedPnlUsd: 0,
+    simulatedPricedPositionCount: 0,
+    simulatedUnpricedPositionCount: localPositions.length,
+    simulatedPositions: localPositions.map((p) => ({
+      ...p,
+      costUsd: p.shares * p.avgEntryPrice,
+      currentPrice: null,
+      currentValueUsd: null,
+      unrealizedPnlUsd: null,
+    })),
+  };
+  let previewValuation = emptyPreviewValuation;
 
   let portfolioValue = 0;
   let polymarketPositions: PolymarketPosition[] = [];
@@ -135,12 +154,15 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
     apiError = e instanceof Error ? e.message : String(e);
   }
 
+  if (config.app.global.previewMode && localPositions.length > 0) {
+    previewValuation = await buildPreviewValuation(localPositions);
+  }
+
   const positionsValueUsd =
     portfolioValue > 0 ? portfolioValue : polymarketPositions.reduce((s, p) => s + p.currentValue, 0);
   const totalValueUsd = (cashUsd ?? 0) + positionsValueUsd;
 
   const unrealizedPnl = polymarketPositions.reduce((s, p) => s + (p.cashPnl ?? 0), 0);
-  const localExposure = localPositions.reduce((s, p) => s + p.shares * p.avgEntryPrice, 0);
 
   return {
     accountId: ctx.accountId,
@@ -163,7 +185,11 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
       todayRealizedPnl: today?.realizedPnl ?? store.getDailyRealizedPnl(),
       todayCopyCount: today?.copyCount ?? 0,
       localPositionCount: localPositions.length,
-      localExposureUsd: localExposure,
+      localExposureUsd: previewValuation.localExposureUsd,
+      simulatedPositionsValueUsd: previewValuation.simulatedPositionsValueUsd,
+      simulatedUnrealizedPnlUsd: previewValuation.simulatedUnrealizedPnlUsd,
+      simulatedPricedPositionCount: previewValuation.simulatedPricedPositionCount,
+      simulatedUnpricedPositionCount: previewValuation.simulatedUnpricedPositionCount,
       killSwitchActive: store.isKillSwitchActive(),
     },
     polymarketPositions,
@@ -177,6 +203,7 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
       title: t.title,
       outcome: t.outcome,
     })),
+    simulatedPositions: previewValuation.simulatedPositions,
     error: apiError,
     collateralError,
     collateralSource,

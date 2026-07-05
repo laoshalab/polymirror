@@ -8,7 +8,7 @@
 import { Wallet, utils } from "ethers";
 import { createPublicClient, type ApiKeyCreds } from "@polymarket/client";
 import { createOrDeriveApiKey } from "@polymarket/client/actions";
-import type { EvmSignature } from "@polymarket/types";
+import type { EvmAddress, EvmSignature } from "@polymarket/types";
 import { ensureUndiciGlobalProxy } from "../util/proxy.js";
 
 const CLOBAUTH_TYPE_STRING =
@@ -38,6 +38,13 @@ const CLOBAUTH_TYPE = [
   { name: "nonce", type: "uint256" },
   { name: "message", type: "string" },
 ];
+
+function asEvmAddress(value: string): EvmAddress {
+  if (!utils.isAddress(value)) {
+    throw new Error(`Invalid EVM address: ${value}`);
+  }
+  return value as EvmAddress;
+}
 
 function clobAuthDomainSeparator(chainId: number): string {
   return utils.keccak256(
@@ -134,7 +141,7 @@ export async function deriveDepositWalletClobCredentials(
 
   const client = createPublicClient();
   return createOrDeriveApiKey(client, {
-    address: depositWallet,
+    address: asEvmAddress(depositWallet),
     nonce,
     signature: wrapped as EvmSignature,
     timestamp,
