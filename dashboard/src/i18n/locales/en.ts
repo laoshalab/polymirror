@@ -375,10 +375,6 @@ export const en: Messages = {
     previewSimSection: "Preview simulated (not real USDC)",
     previewExposure: "Simulated exposure",
     previewLocalPositions: "Simulated positions",
-    previewMarketValue: "Simulated market value",
-    previewUnrealizedPnl: "Simulated unrealized PnL",
-    previewPricedPositions: "Priced positions",
-    previewUnpricedSuffix: "unpriced",
     hintPreviewZero:
       "Figures above come from on-chain Polymarket (CLOB available USDC + Data API positions). In Preview mode, copy trades are recorded in preview.db only — they do not use your Polymarket balance.",
     hintVerifyAddress:
