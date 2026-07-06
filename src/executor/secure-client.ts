@@ -1,5 +1,10 @@
 import { Wallet } from "ethers";
-import { createSecureClient, relayerApiKey, type SecureClient } from "@polymarket/client";
+import {
+  createSecureClient,
+  relayerApiKey,
+  type SecureClient,
+  type SecureClientOptions,
+} from "@polymarket/client";
 import { signerFrom } from "@polymarket/client/ethers-v5";
 import type { WalletConfig } from "../config/types.js";
 import { fetchPusdAllowancesReady } from "./balance.js";
@@ -16,6 +21,14 @@ import { ensureUndiciGlobalProxy } from "../util/proxy.js";
 const clientByKey = new Map<string, Promise<SecureClient>>();
 const tradingReadyByKey = new Map<string, Promise<void>>();
 const approvalsReadyByKey = new Map<string, boolean>();
+
+type SecureClientCredentials = NonNullable<SecureClientOptions["credentials"]>;
+
+function asApiKey(value: string): SecureClientCredentials["key"] {
+  const key = value.trim();
+  if (!key) throw new Error("POLYMARKET_API_KEY is empty");
+  return key as SecureClientCredentials["key"];
+}
 
 function cacheKey(wallet: WalletConfig): string {
   return [
@@ -89,10 +102,10 @@ export async function getSecureClient(wallet: WalletConfig): Promise<SecureClien
     const isDepositWallet =
       mode === "settings" && wallet.proxyAddress.toLowerCase() !== eoa;
 
-    let clobCredentials =
+    let clobCredentials: SecureClientCredentials | undefined =
       wallet.apiKey && wallet.apiSecret && wallet.apiPassphrase
         ? {
-            key: wallet.apiKey,
+            key: asApiKey(wallet.apiKey),
             secret: wallet.apiSecret,
             passphrase: wallet.apiPassphrase,
           }
@@ -117,9 +130,8 @@ export async function getSecureClient(wallet: WalletConfig): Promise<SecureClien
       }
     }
 
-    const client = await createSecureClient({
+    const baseOptions: Omit<SecureClientOptions, "credentials" | "nonce"> = {
       signer,
-      ...(clobCredentials ? { credentials: clobCredentials } : {}),
       ...(hasRelayer
         ? {
             apiKey: relayerApiKey({
@@ -129,7 +141,11 @@ export async function getSecureClient(wallet: WalletConfig): Promise<SecureClien
           }
         : {}),
       ...(mode === "settings" ? { wallet: wallet.proxyAddress } : {}),
-    });
+    };
+
+    const client = await createSecureClient(
+      clobCredentials ? { ...baseOptions, credentials: clobCredentials } : baseOptions
+    );
 
     const accountWallet = client.account.wallet.toLowerCase();
     const configured = wallet.proxyAddress.toLowerCase();
