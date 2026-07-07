@@ -115,6 +115,7 @@ export const en: Messages = {
   hourlyChart: {
     title: "24h copy activity",
     subtitle: "COPY / SKIP / ERROR distribution in the last 24 hours · {total} copies total",
+    chartAria: "24-hour copy activity bar chart",
   },
   activity: {
     title: "Activity",
@@ -170,6 +171,14 @@ export const en: Messages = {
     unfollowConfirmDesc:
       "Deletes this leader from config.yaml and stops copy trading. In Live mode, pending orders are cancelled and tracked positions for this leader are sold automatically (skipped when balance is too low or below min order size).",
     unfollowConfirmBtn: "Confirm delete",
+    weightLabel: "weight",
+    maxPositionUsd: "max_position_usd",
+    maxDailyVolumeUsd: "max_daily_volume_usd",
+    minPrice: "min_price",
+    maxPrice: "max_price",
+    sideBuy: "BUY",
+    sideSell: "SELL",
+    toggleLeader: "{action} Leader {id}",
   },
   discover: {
     title: "Discover traders",
@@ -373,6 +382,7 @@ export const en: Messages = {
     killActive: " · Kill Switch active",
     chainSection: "Polymarket on-chain (real funds)",
     previewSimSection: "Preview simulated (not real USDC)",
+    previewCash: "Simulated cash",
     previewExposure: "Simulated exposure",
     previewLocalPositions: "Simulated positions",
     hintPreviewZero:
@@ -424,6 +434,8 @@ export const en: Messages = {
     todayVolumeLeaders: "Today {volume} · Leaders {leaders}",
   },
   table: {
+    id: "ID",
+    strategy: "strategy",
     time: "Time",
     leader: "Leader",
     action: "Action",

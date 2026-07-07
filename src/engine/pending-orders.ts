@@ -72,12 +72,11 @@ async function processPendingOrderRow(
   try {
     const statusResult = await executor.getOrderStatus(row.orderId, row.tokenId);
     if (statusResult.kind === "transient") {
-      return {
-        ...empty,
-        errors: [
-          `pending ${row.orderId.slice(0, 12)}: status check failed (${statusResult.message})`,
-        ],
-      };
+      logInfo("Pending order status check skipped (transient)", {
+        orderId: row.orderId.slice(0, 12),
+        reason: statusResult.message,
+      });
+      return empty;
     }
     if (statusResult.kind === "not_found") {
       store.removePendingOrder(row.orderId);

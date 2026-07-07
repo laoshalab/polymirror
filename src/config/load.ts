@@ -203,6 +203,7 @@ function mapGlobal(raw: GlobalYaml) {
       networkRetryLimit: raw.execution.network_retry_limit,
       gtcFillTimeoutMs: raw.execution.gtc_fill_timeout_ms,
       pendingOrderMaxAgeHours: raw.execution.pending_order_max_age_hours,
+      autoRedeemOnChain: raw.execution.auto_redeem_on_chain,
     },
     conflict: {
       mode: raw.conflict.mode,

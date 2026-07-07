@@ -6,6 +6,8 @@ Single-platform Polymarket multi-leader copy trading (mode A).
 
 Future: cross-venue execution (Kalshi, Limitless) via a separate matcher layer — not in v0.1.
 
+Future: **Web + Agent** website product (cloud control plane + local Agent signer, no hosted private keys) — see [WEB_AGENT_ARCHITECTURE.md](WEB_AGENT_ARCHITECTURE.md).
+
 ## Data flow
 
 ```

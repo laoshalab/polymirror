@@ -1,6 +1,0 @@
-# Polymarket Python 下单脚本依赖（scripts/place_order.py）
-# 官方推荐的 CLOB V2 客户端，自动处理 L1/L2 认证与 EIP-712 订单签名。
-py-clob-client-v2
-requests
-python-dotenv
-web3

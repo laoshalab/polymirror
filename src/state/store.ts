@@ -127,6 +127,10 @@ export class StateStore {
         updated_at INTEGER NOT NULL
       );
       CREATE INDEX IF NOT EXISTS idx_pending_orders_leader ON pending_orders(leader_id);
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value REAL NOT NULL
+      );
     `);
     this.migrate();
   }
@@ -140,6 +144,57 @@ export class StateStore {
     if (!dailyCols.some((c) => c.name === "realized_pnl")) {
       this.db.exec("ALTER TABLE daily_stats ADD COLUMN realized_pnl REAL NOT NULL DEFAULT 0");
     }
+    this.db.exec(`
+      CREATE TABLE IF NOT EXISTS meta (
+        key TEXT PRIMARY KEY,
+        value REAL NOT NULL
+      );
+    `);
+  }
+
+  private addBuyVolumeIfNeeded(side: "BUY" | "SELL", leaderId: string, usd: number): void {
+    if (side !== "BUY") return;
+    this.addDailyVolume(usd);
+    this.addLeaderDailyVolume(leaderId, usd);
+  }
+
+  private adjustPreviewCashIfNeeded(
+    side: "BUY" | "SELL",
+    usd: number,
+    preview: boolean
+  ): void {
+    if (!preview) return;
+    if (side === "BUY") this.adjustPreviewCash(-usd);
+    else this.adjustPreviewCash(usd);
+  }
+
+  /** Initialize preview simulated cash once from starting_capital_usd. */
+  ensurePreviewCash(startingCapitalUsd: number): void {
+    const row = this.db
+      .prepare("SELECT 1 FROM meta WHERE key = 'preview_cash_usd'")
+      .get();
+    if (row) return;
+    this.db
+      .prepare("INSERT INTO meta (key, value) VALUES ('preview_cash_usd', ?)")
+      .run(Math.max(0, startingCapitalUsd));
+  }
+
+  getPreviewCashUsd(): number {
+    const row = this.db
+      .prepare("SELECT value FROM meta WHERE key = 'preview_cash_usd'")
+      .get() as { value: number } | undefined;
+    return row?.value ?? 0;
+  }
+
+  adjustPreviewCash(delta: number): number {
+    const next = Math.round((this.getPreviewCashUsd() + delta) * 100) / 100;
+    this.db
+      .prepare(
+        `INSERT INTO meta (key, value) VALUES ('preview_cash_usd', ?)
+         ON CONFLICT(key) DO UPDATE SET value = excluded.value`
+      )
+      .run(next);
+    return next;
   }
 
   hasSeen(key: string): boolean {
@@ -449,8 +504,8 @@ export class StateStore {
         const usd = fill.delta * fill.price;
         this.applyCopyFill(fill.leaderId, fill.tokenId, fill.side, fill.delta, fill.price);
         if (fill.side === "BUY") this.recordBuy(fill.leaderId, fill.tokenId);
-        this.addDailyVolume(usd);
-        this.addLeaderDailyVolume(fill.leaderId, usd);
+        this.addBuyVolumeIfNeeded(fill.side, fill.leaderId, usd);
+        this.adjustPreviewCashIfNeeded(fill.side, usd, fill.preview);
         this.audit({
           leaderId: fill.leaderId,
           action: "COPY",
@@ -522,8 +577,8 @@ export class StateStore {
       }
       this.applyCopyFill(leaderId, tokenId, side, filledShares, price);
       if (side === "BUY") this.recordBuy(leaderId, tokenId);
-      this.addDailyVolume(filledUsd);
-      this.addLeaderDailyVolume(leaderId, filledUsd);
+      this.addBuyVolumeIfNeeded(side, leaderId, filledUsd);
+      this.adjustPreviewCashIfNeeded(side, filledUsd, preview);
       this.audit({
         leaderId,
         action: "COPY",
@@ -610,8 +665,7 @@ export class StateStore {
       if (filledShares > 0) {
         this.applyCopyFill(leaderId, tokenId, side, filledShares, price);
         if (side === "BUY") this.recordBuy(leaderId, tokenId);
-        this.addDailyVolume(filledUsd);
-        this.addLeaderDailyVolume(leaderId, filledUsd);
+        this.addBuyVolumeIfNeeded(side, leaderId, filledUsd);
         this.audit({
           leaderId,
           action: "COPY",
@@ -624,6 +678,74 @@ export class StateStore {
         });
       }
     })();
+  }
+
+  /**
+   * Settle / redeem local shares (leader REDEEM copy or resolved market sync).
+   * Returns false when no open position for leader+token.
+   */
+  recordRedeemSettlement(entry: {
+    tradeKey?: string;
+    leaderId: string;
+    tokenId: string;
+    payoutUsd: number;
+    preview: boolean;
+    auditReason: string;
+  }): boolean {
+    const { tradeKey, leaderId, tokenId, payoutUsd, preview, auditReason } = entry;
+    const row = this.db
+      .prepare("SELECT shares, avg_entry_price FROM positions WHERE leader_id = ? AND token_id = ?")
+      .get(leaderId, tokenId) as { shares: number; avg_entry_price: number } | undefined;
+    const shares = row?.shares ?? 0;
+    if (shares <= 0.001) return false;
+
+    const avg = row?.avg_entry_price ?? 0;
+    const payout = Math.round(Math.max(0, payoutUsd) * 100) / 100;
+    const pnl = Math.round((payout - shares * avg) * 100) / 100;
+
+    this.db.transaction(() => {
+      if (tradeKey) this.markSeen(tradeKey, leaderId);
+      this.db
+        .prepare("DELETE FROM positions WHERE leader_id = ? AND token_id = ?")
+        .run(leaderId, tokenId);
+      if (pnl !== 0) this.addRealizedPnl(pnl);
+      if (preview && payout > 0) this.adjustPreviewCash(payout);
+      this.audit({
+        leaderId,
+        action: "COPY",
+        tokenId,
+        side: "REDEEM",
+        size: shares,
+        price: shares > 0 ? payout / shares : 0,
+        reason: auditReason,
+        preview,
+      });
+    })();
+    return true;
+  }
+
+  /** Settle all leaders' shares for a resolved token (auto settlement sync). */
+  recordTokenSettlement(tokenId: string, payoutPerShare: number, preview: boolean): number {
+    const rows = this.db
+      .prepare(
+        `SELECT leader_id AS leaderId, shares, avg_entry_price AS avgEntryPrice
+         FROM positions WHERE token_id = ? AND shares > 0.001`
+      )
+      .all(tokenId) as { leaderId: string; shares: number; avgEntryPrice: number }[];
+
+    let settled = 0;
+    for (const row of rows) {
+      const payoutUsd = Math.round(row.shares * payoutPerShare * 100) / 100;
+      const ok = this.recordRedeemSettlement({
+        leaderId: row.leaderId,
+        tokenId,
+        payoutUsd,
+        preview,
+        auditReason: `market settled @ $${payoutPerShare.toFixed(2)}/share`,
+      });
+      if (ok) settled++;
+    }
+    return settled;
   }
 
   /** Set pending order timestamps (for tests / recovery). */

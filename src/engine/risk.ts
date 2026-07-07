@@ -56,7 +56,15 @@ export class RiskGate {
     return { allow: true };
   }
 
-  canSpendUsd(leaderId: string, usd: number, leaderMaxDaily?: number): RiskCheckResult {
+  /** Daily volume caps apply to BUY spend only — SELL exits must not be blocked. */
+  canSpendUsd(
+    leaderId: string,
+    usd: number,
+    side: "BUY" | "SELL",
+    leaderMaxDaily?: number
+  ): RiskCheckResult {
+    if (side !== "BUY") return { allow: true };
+
     const today = this.store.getDailyVolumeUsd();
     if (today + usd > this.global.risk.maxDailyVolumeUsd) {
       return { allow: false, reason: "global max daily volume" };
@@ -66,6 +74,18 @@ export class RiskGate {
       if (leaderToday + usd > leaderMaxDaily) {
         return { allow: false, reason: `leader ${leaderId} max daily volume` };
       }
+    }
+    return { allow: true };
+  }
+
+  canAffordPreviewBuy(usd: number, startingCapitalUsd: number): RiskCheckResult {
+    this.store.ensurePreviewCash(startingCapitalUsd);
+    const cash = this.store.getPreviewCashUsd();
+    if (cash + 0.01 < usd) {
+      return {
+        allow: false,
+        reason: `insufficient preview cash $${cash.toFixed(2)} < need $${usd.toFixed(2)}`,
+      };
     }
     return { allow: true };
   }
@@ -101,7 +121,7 @@ export class RiskGate {
     return { allow: true };
   }
 
-  recordCopy(leaderId: string, usd: number): void {
+  recordBuyVolume(leaderId: string, usd: number): void {
     this.store.addDailyVolume(usd);
     this.store.addLeaderDailyVolume(leaderId, usd);
   }

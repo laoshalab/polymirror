@@ -12,14 +12,15 @@ export interface PollResult {
 
 export async function pollLeaders(
   registry: LeaderRegistry,
-  global: GlobalConfig
+  global: GlobalConfig,
+  dataApiUrl?: string
 ): Promise<PollResult[]> {
   const leaders = registry.enabled();
 
   const settled = await Promise.allSettled(
     leaders.map(async (leader) => {
       const activities = await getActivity(
-        "",
+        dataApiUrl ?? "",
         {
           user: leader.address!,
           limit: global.activityLimit,

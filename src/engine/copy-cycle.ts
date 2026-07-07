@@ -2,6 +2,7 @@ import type { RuntimeConfig } from "../config/types.js";
 import { pollLeaders } from "../monitor/poll.js";
 import { tradeEventKey } from "../monitor/data-api.js";
 import type { Activity } from "../monitor/data-api.js";
+import { processSettlements } from "../engine/settlement.js";
 import { calculateOrderSize } from "../engine/sizing.js";
 import { passActivityFilters } from "../engine/filters.js";
 import { isAnyTradeKeySeen, isRecentBuyDuplicate } from "../engine/dedup.js";
@@ -13,13 +14,14 @@ import { processPendingOrders } from "../engine/pending-orders.js";
 import { adoptUntrackedOpenOrders } from "../engine/order-reconcile.js";
 import {
   checkWalletDrifts,
-  fetchWalletTokenBalance,
   fetchWalletCollateralUsdc,
   fetchWalletCollateral,
   checkLiveBuyCollateralAndAllowance,
-  checkLiveSellTokenAllowance,
+  checkLiveSellFromSnapshot,
+  fetchConditionalTokenSnapshot,
   canTradeWithChainFallback,
   proportionalSellable,
+  TokenBalanceCache,
 } from "../executor/balance.js";
 import { ClobExecutor, isDefiniteOrderRejection, type PlaceOrderResult } from "../executor/clob.js";
 import {
@@ -39,11 +41,17 @@ import { LeaderRegistry } from "../leaders/registry.js";
 import { loadTelegramConfig, TelegramNotifier } from "../notify/telegram.js";
 import { ensureUndiciGlobalProxy } from "../util/proxy.js";
 
+/** Wallet drift checks hit CLOB once per open token — throttle to avoid blocking every poll. */
+const DRIFT_CHECK_INTERVAL_MS = 120_000;
+const lastDriftCheckByWallet = new Map<string, number>();
+
 export interface CopyCycleResult {
   fetched: number;
   copied: number;
   skipped: number;
   pendingFilled: number;
+  redeemed: number;
+  autoSettled: number;
   errors: string[];
   walletDrifts: string[];
   pendingOrders: number;
@@ -89,10 +97,32 @@ export async function runCopyCycle(
   let copied = 0;
   let skipped = 0;
   let pendingFilled = 0;
+  let redeemed = 0;
+  let autoSettled = 0;
 
   const pendingResult = await processPendingOrders(config, store, risk, telegram);
   pendingFilled += pendingResult.filled;
   errors.push(...pendingResult.errors);
+
+  const preview = config.app.global.previewMode;
+
+  if (preview) {
+    store.ensurePreviewCash(config.app.global.risk.startingCapitalUsd);
+  }
+
+  const settlement = await processSettlements(
+    registry,
+    config.app.global,
+    store,
+    preview,
+    {
+      dataApiUrl: config.wallet.dataApiUrl,
+      wallet: preview ? undefined : config.wallet,
+    }
+  );
+  redeemed += settlement.leaderRedeems;
+  autoSettled += settlement.autoSettled;
+  errors.push(...settlement.errors);
 
   const gate = risk.canTrade();
   if (!gate.allow) {
@@ -105,6 +135,8 @@ export async function runCopyCycle(
       copied: 0,
       skipped: 0,
       pendingFilled,
+      redeemed,
+      autoSettled,
       errors: gate.reason ? [gate.reason, ...errors] : errors,
       walletDrifts: [],
       pendingOrders: store.countPendingOrders(),
@@ -119,15 +151,46 @@ export async function runCopyCycle(
     errors.push(...orphanResult.warnings);
   }
 
-  const preview = config.app.global.previewMode;
   let liveCollateral: Awaited<ReturnType<typeof fetchWalletCollateral>> | undefined;
   let walletDrifts: string[] = [];
-  if (!preview && config.app.global.risk.syncWalletBalance) {
-    const drifts = await checkWalletDrifts(
-      config.wallet,
-      store.listOpenTokenIds(),
-      (tokenId) => store.getTotalTokenShares(tokenId)
-    );
+  const tokenBalanceCache = !preview && config.app.global.risk.syncWalletBalance
+    ? new TokenBalanceCache()
+    : undefined;
+  const sellBalanceFetchOpts = {
+    cache: tokenBalanceCache,
+    retries: Math.min(config.app.global.execution.networkRetryLimit, 1),
+  };
+
+  const walletKey = config.wallet.proxyAddress.toLowerCase();
+  const openTokenIds = store.listOpenTokenIds();
+  const shouldRunDriftCheck =
+    !preview &&
+    config.app.global.risk.syncWalletBalance &&
+    openTokenIds.length > 0 &&
+    Date.now() - (lastDriftCheckByWallet.get(walletKey) ?? 0) >= DRIFT_CHECK_INTERVAL_MS;
+
+  if (shouldRunDriftCheck) {
+    lastDriftCheckByWallet.set(walletKey, Date.now());
+  }
+
+  const driftPromise = shouldRunDriftCheck
+    ? checkWalletDrifts(
+        config.wallet,
+        openTokenIds,
+        (tokenId) => store.getTotalTokenShares(tokenId),
+        0.02,
+        { cache: tokenBalanceCache, retries: 0 }
+      )
+    : Promise.resolve([]);
+
+  const pendingOrders = store.countPendingOrders();
+
+  const [drifts, pollResults] = await Promise.all([
+    driftPromise,
+    pollLeaders(registry, config.app.global, config.wallet.dataApiUrl),
+  ]);
+
+  if (shouldRunDriftCheck) {
     walletDrifts = drifts.map(
       (d) => `${d.tokenId.slice(0, 12)}: wallet=${d.walletShares} tracked=${d.trackedShares}`
     );
@@ -136,9 +199,6 @@ export async function runCopyCycle(
     }
   }
 
-  const pendingOrders = store.countPendingOrders();
-
-  const pollResults = await pollLeaders(registry, config.app.global);
   const rawQueue: QueuedTrade[] = [];
 
   for (const result of pollResults) {
@@ -249,6 +309,7 @@ export async function runCopyCycle(
     const spendCheck = risk.canSpendUsd(
       leaderId,
       sizing.finalUsd,
+      activity.side,
       leader.limits?.maxDailyVolumeUsd
     );
     if (!spendCheck.allow) {
@@ -260,6 +321,18 @@ export async function runCopyCycle(
     const leaderPrice = activity.price ?? 0;
 
     if (activity.side === "BUY") {
+      if (preview) {
+        const cashCheck = risk.canAffordPreviewBuy(
+          sizing.finalUsd,
+          config.app.global.risk.startingCapitalUsd
+        );
+        if (!cashCheck.allow) {
+          skipped++;
+          skip(store, leaderId, activity, cashCheck.reason ?? "insufficient preview cash", preview);
+          continue;
+        }
+      }
+
       const tokenCap = risk.canAddTokenExposure(
         activity.asset,
         sizing.finalUsd,
@@ -307,33 +380,55 @@ export async function runCopyCycle(
 
     if (activity.side === "SELL") {
       let held = store.getPosition(leaderId, activity.asset);
-      if (!preview && config.app.global.risk.syncWalletBalance) {
-        const walletShares = await fetchWalletTokenBalance(config.wallet, activity.asset);
-        if (walletShares !== null) {
-          const totalTracked = store.getTotalTokenShares(activity.asset);
-          held = proportionalSellable(held, walletShares, totalTracked);
+      let sellSnap: Awaited<ReturnType<typeof fetchConditionalTokenSnapshot>> = null;
+
+      if (!preview) {
+        if (config.app.global.risk.syncWalletBalance) {
+          sellSnap = await fetchConditionalTokenSnapshot(
+            config.wallet,
+            activity.asset,
+            { refresh: true, ...sellBalanceFetchOpts }
+          );
+          if (sellSnap !== null) {
+            const totalTracked = store.getTotalTokenShares(activity.asset);
+            held = proportionalSellable(held, sellSnap.balance, totalTracked);
+          }
         }
-      }
-      if (held < sizing.finalShares) {
+
+        if (held < sizing.finalShares) {
+          const reason = `SELL held=${held} need=${sizing.finalShares}`;
+          errors.push(`${leaderId}: ${reason}`);
+          store.markSeenMany(sourceTradeKeys, leaderId);
+          skipped++;
+          skip(store, leaderId, activity, reason, preview);
+          continue;
+        }
+
+        if (sellSnap === null) {
+          sellSnap = await fetchConditionalTokenSnapshot(
+            config.wallet,
+            activity.asset,
+            { refresh: true, ...sellBalanceFetchOpts }
+          );
+        }
+        const sellAllowance = sellSnap
+          ? checkLiveSellFromSnapshot(sellSnap, sizing.finalShares)
+          : {
+              allow: false as const,
+              reason: "token allowance check failed: CLOB balance unavailable",
+            };
+        if (!sellAllowance.allow) {
+          skipped++;
+          skip(store, leaderId, activity, sellAllowance.reason ?? "token allowance", preview);
+          continue;
+        }
+      } else if (held < sizing.finalShares) {
         const reason = `SELL held=${held} need=${sizing.finalShares}`;
         errors.push(`${leaderId}: ${reason}`);
         store.markSeenMany(sourceTradeKeys, leaderId);
         skipped++;
         skip(store, leaderId, activity, reason, preview);
         continue;
-      }
-
-      if (!preview) {
-        const sellAllowance = await checkLiveSellTokenAllowance(
-          config.wallet,
-          activity.asset,
-          sizing.finalShares
-        );
-        if (!sellAllowance.allow) {
-          skipped++;
-          skip(store, leaderId, activity, sellAllowance.reason ?? "token allowance", preview);
-          continue;
-        }
       }
     }
 
@@ -511,7 +606,17 @@ export async function runCopyCycle(
   }
 
   healthSnapshot.pendingOrders = store.countPendingOrders();
-  return { fetched, copied, skipped, pendingFilled, errors, walletDrifts, pendingOrders };
+  return {
+    fetched,
+    copied,
+    skipped,
+    pendingFilled,
+    redeemed,
+    autoSettled,
+    errors,
+    walletDrifts,
+    pendingOrders,
+  };
 }
 
 export async function startBot(configPath = "config.yaml"): Promise<void> {

@@ -171,6 +171,14 @@ export const zh: Messages = {
     unfollowConfirmDesc:
       "将从 config.yaml 删除该 Leader 并停止跟单。Live 模式下会尝试撤销其 Pending 挂单，并自动卖出该 Leader 的本地跟踪持仓（链上余额不足或金额过小时可能跳过）。",
     unfollowConfirmBtn: "确认删除",
+    weightLabel: "weight",
+    maxPositionUsd: "max_position_usd",
+    maxDailyVolumeUsd: "max_daily_volume_usd",
+    minPrice: "min_price",
+    maxPrice: "max_price",
+    sideBuy: "BUY",
+    sideSell: "SELL",
+    toggleLeader: "{action} Leader {id}",
   },
   discover: {
     title: "发现 Trader",
@@ -375,6 +383,7 @@ export const zh: Messages = {
     killActive: " · Kill Switch 激活",
     chainSection: "Polymarket 链上（真实资金）",
     previewSimSection: "Preview 模拟（非真实 USDC）",
+    previewCash: "模拟可用现金",
     previewExposure: "模拟敞口",
     previewLocalPositions: "模拟持仓数",
     hintPreviewZero:
@@ -426,6 +435,8 @@ export const zh: Messages = {
     todayVolumeLeaders: "今日 {volume} · Leaders {leaders}",
   },
   table: {
+    id: "ID",
+    strategy: "strategy",
     time: "时间",
     leader: "Leader",
     action: "动作",

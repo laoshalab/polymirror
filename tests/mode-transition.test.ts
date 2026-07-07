@@ -65,6 +65,7 @@ function minimalConfig(previewMode: boolean, enableCopy = true): RuntimeConfig {
           networkRetryLimit: 3,
           gtcFillTimeoutMs: 10_000,
           pendingOrderMaxAgeHours: 48,
+          autoRedeemOnChain: true,
         },
         conflict: { mode: "priority_leader", priority: [] },
         notify: {

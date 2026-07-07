@@ -50,6 +50,7 @@ export const globalSettingsPatchSchema = z.object({
       networkRetryLimit: z.number().int().nonnegative().optional(),
       gtcFillTimeoutMs: z.number().int().nonnegative().optional(),
       pendingOrderMaxAgeHours: z.number().positive().optional(),
+      autoRedeemOnChain: z.boolean().optional(),
     })
     .optional(),
   conflict: z
@@ -180,6 +181,7 @@ export function globalConfigToDto(global: Record<string, unknown>) {
       networkRetryLimit: e.network_retry_limit ?? 3,
       gtcFillTimeoutMs: e.gtc_fill_timeout_ms ?? 10000,
       pendingOrderMaxAgeHours: e.pending_order_max_age_hours ?? 48,
+      autoRedeemOnChain: e.auto_redeem_on_chain ?? true,
     },
     conflict: {
       mode: c.mode ?? "priority_leader",
@@ -251,6 +253,9 @@ function applyGlobalPatchToRecord(g: Record<string, unknown>, patch: GlobalSetti
     if (e.gtcFillTimeoutMs !== undefined) execution.gtc_fill_timeout_ms = e.gtcFillTimeoutMs;
     if (e.pendingOrderMaxAgeHours !== undefined) {
       execution.pending_order_max_age_hours = e.pendingOrderMaxAgeHours;
+    }
+    if (e.autoRedeemOnChain !== undefined) {
+      execution.auto_redeem_on_chain = e.autoRedeemOnChain;
     }
     g.execution = execution;
   }

@@ -2,7 +2,7 @@ import { apiGet } from "./leaders";
 
 export type PnlRange = "1d" | "1w" | "1m" | "1y" | "ytd" | "all";
 
-export const PNL_RANGE_IDS: PnlRange[] = ["1d", "1w", "1m", "1y", "ytd", "all"];
+export interface PnlPoint {
   ts: number;
   pnl: number;
 }

@@ -43,6 +43,7 @@ export const globalYamlSchema = z.object({
     network_retry_limit: z.number().int().nonnegative().default(3),
     gtc_fill_timeout_ms: z.number().int().nonnegative().default(10000),
     pending_order_max_age_hours: z.number().positive().default(48),
+    auto_redeem_on_chain: z.boolean().default(true),
   }),
   conflict: z.object({
     mode: conflictMode.default("priority_leader"),

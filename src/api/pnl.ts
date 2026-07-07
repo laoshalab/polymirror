@@ -1,4 +1,5 @@
 import { fetchJsonWithRetry } from "../util/fetch.js";
+import { logInfo } from "../notify/logger.js";
 
 export type PnlRange = "1d" | "1w" | "1m" | "1y" | "ytd" | "all";
 
@@ -21,10 +22,28 @@ export interface AccountPnlSnapshot {
   source: "polymarket" | "engine";
   error?: string;
   hint?: string;
+  /** True when polymarket PnL data was served from cache. */
+  cached?: boolean;
 }
 
 const PNL_API = "https://user-pnl-api.polymarket.com/user-pnl";
 const LB_PROFIT_API = "https://lb-api.polymarket.com/profit";
+/** Dashboard PnL reads — stale entries are reused on fetch failure. */
+export const PNL_CACHE_TTL_MS = 60_000;
+
+interface PnlPolymarketData {
+  points: PnlPoint[];
+  periodStartPnl: number;
+  currentPnl: number;
+  change: number;
+}
+
+interface PnlCacheEntry {
+  at: number;
+  data: PnlPolymarketData;
+}
+
+const pnlCache = new Map<string, PnlCacheEntry>();
 
 const RANGE_LABELS: Record<PnlRange, string> = {
   "1d": "过去 24 小时",
@@ -145,6 +164,69 @@ function summarizePoints(points: PnlPoint[]): { current: number; change: number;
   return { current: last, change: last - first, start: first };
 }
 
+function pnlCacheKey(address: string, range: PnlRange): string {
+  return `${address.toLowerCase()}:${range}`;
+}
+
+async function fetchPolymarketPnlData(address: string, range: PnlRange): Promise<PnlPolymarketData> {
+  const [points, lbProfit] = await Promise.all([
+    fetchPnlTimeseries(address, range),
+    fetchLbProfit(address, range),
+  ]);
+
+  const summary = summarizePoints(points);
+  let currentPnl = lbProfit ?? summary.current;
+  let change =
+    lbProfit !== null && points.length >= 2 ? lbProfit - summary.start : summary.change;
+
+  if (points.length === 0 && lbProfit === null) {
+    currentPnl = 0;
+    change = 0;
+  }
+
+  return {
+    points,
+    periodStartPnl: summary.start,
+    currentPnl,
+    change,
+  };
+}
+
+async function getPolymarketPnlData(
+  address: string,
+  range: PnlRange
+): Promise<{ data: PnlPolymarketData; cached: boolean }> {
+  const key = pnlCacheKey(address, range);
+  const hit = pnlCache.get(key);
+  const now = Date.now();
+
+  if (hit && now - hit.at < PNL_CACHE_TTL_MS) {
+    return { data: hit.data, cached: true };
+  }
+
+  try {
+    const data = await fetchPolymarketPnlData(address, range);
+    pnlCache.set(key, { at: now, data });
+    return { data, cached: false };
+  } catch (e) {
+    if (hit) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logInfo("PnL fetch failed — using stale cache", {
+        address: address.slice(0, 10),
+        range,
+        ageMs: now - hit.at,
+        error: msg,
+      });
+      return { data: hit.data, cached: true };
+    }
+    throw e;
+  }
+}
+
+export function resetPnlCache(): void {
+  pnlCache.clear();
+}
+
 export async function buildAccountPnlSnapshot(options: {
   accountId: string;
   address: string;
@@ -168,24 +250,12 @@ export async function buildAccountPnlSnapshot(options: {
   };
 
   try {
-    const [points, lbProfit] = await Promise.all([
-      fetchPnlTimeseries(options.address, range),
-      fetchLbProfit(options.address, range),
-    ]);
-
-    const summary = summarizePoints(points);
-    base.points = points;
-    base.periodStartPnl = summary.start;
-    base.currentPnl = lbProfit ?? summary.current;
-    base.change =
-      lbProfit !== null && points.length >= 2
-        ? lbProfit - summary.start
-        : summary.change;
-
-    if (points.length === 0 && lbProfit === null) {
-      base.currentPnl = 0;
-      base.change = 0;
-    }
+    const { data, cached } = await getPolymarketPnlData(options.address, range);
+    base.points = data.points;
+    base.periodStartPnl = data.periodStartPnl;
+    base.currentPnl = data.currentPnl;
+    base.change = data.change;
+    base.cached = cached;
   } catch (e) {
     base.error = e instanceof Error ? e.message : String(e);
     base.hint = "无法拉取 Polymarket 盈亏曲线。请在「设置 → 网络」配置代理。";

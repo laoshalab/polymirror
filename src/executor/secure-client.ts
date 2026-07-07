@@ -1,5 +1,5 @@
 import { Wallet } from "ethers";
-import { createSecureClient, relayerApiKey, type SecureClient } from "@polymarket/client";
+import { createSecureClient, relayerApiKey, type ApiKeyCreds, type SecureClient, type SecureClientOptions } from "@polymarket/client";
 import { signerFrom } from "@polymarket/client/ethers-v5";
 import type { WalletConfig } from "../config/types.js";
 import { fetchPusdAllowancesReady } from "./balance.js";
@@ -71,6 +71,32 @@ async function prepareRelayerDeployedWallet(wallet: WalletConfig, mode: "auto" |
   );
 }
 
+function buildSecureClientOptions(
+  signer: ReturnType<typeof signerFrom>,
+  wallet: WalletConfig,
+  mode: "auto" | "settings",
+  hasRelayer: boolean,
+  clobCredentials?: ApiKeyCreds
+): SecureClientOptions {
+  const shared = {
+    signer,
+    ...(hasRelayer
+      ? {
+          apiKey: relayerApiKey({
+            key: wallet.relayerApiKey!,
+            address: wallet.relayerApiKeyAddress!,
+          }),
+        }
+      : {}),
+    ...(mode === "settings" ? { wallet: wallet.proxyAddress } : {}),
+  };
+
+  if (clobCredentials) {
+    return { ...shared, credentials: clobCredentials };
+  }
+  return shared;
+}
+
 export async function getSecureClient(wallet: WalletConfig): Promise<SecureClient> {
   const key = cacheKey(wallet);
   const existing = clientByKey.get(key);
@@ -89,13 +115,13 @@ export async function getSecureClient(wallet: WalletConfig): Promise<SecureClien
     const isDepositWallet =
       mode === "settings" && wallet.proxyAddress.toLowerCase() !== eoa;
 
-    let clobCredentials =
+    let clobCredentials: ApiKeyCreds | undefined =
       wallet.apiKey && wallet.apiSecret && wallet.apiPassphrase
-        ? {
+        ? ({
             key: wallet.apiKey,
             secret: wallet.apiSecret,
             passphrase: wallet.apiPassphrase,
-          }
+          } as ApiKeyCreds)
         : undefined;
 
     if (!clobCredentials && isDepositWallet) {
@@ -117,19 +143,9 @@ export async function getSecureClient(wallet: WalletConfig): Promise<SecureClien
       }
     }
 
-    const client = await createSecureClient({
-      signer,
-      ...(clobCredentials ? { credentials: clobCredentials } : {}),
-      ...(hasRelayer
-        ? {
-            apiKey: relayerApiKey({
-              key: wallet.relayerApiKey!,
-              address: wallet.relayerApiKeyAddress!,
-            }),
-          }
-        : {}),
-      ...(mode === "settings" ? { wallet: wallet.proxyAddress } : {}),
-    });
+    const client = await createSecureClient(
+      buildSecureClientOptions(signer, wallet, mode, hasRelayer, clobCredentials)
+    );
 
     const accountWallet = client.account.wallet.toLowerCase();
     const configured = wallet.proxyAddress.toLowerCase();
@@ -193,7 +209,7 @@ export async function ensureTradingReady(wallet: WalletConfig): Promise<void> {
           throw new Error(
             "EOA 模式：交易所授权需由 EOA 自行支付 gas 完成（非 relayer）。\n" +
               "  1) 向 EOA 充值少量 POL 作为 gas；\n" +
-              "  2) 运行：python3 scripts/setup_eoa_approvals.py\n" +
+              "  2) 在 Polygon 上对 CLOB V2 交易所合约完成 pUSD approve 与 ConditionalTokens setApprovalForAll；\n" +
               "授权完成后本步骤会自动跳过。"
           );
         }

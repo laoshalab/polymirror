@@ -181,7 +181,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
           />
         </label>
         <label className="form-label">
-          weight
+          {t("leaders.weightLabel")}
           <input
             type="number"
             step="0.1"
@@ -206,7 +206,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
         <summary>{t("leaders.advancedLimits")}</summary>
         <div className="form-row">
           <label className="form-label">
-            max_position_usd
+            {t("leaders.maxPositionUsd")}
             <input
               type="number"
               step="1"
@@ -217,7 +217,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
             />
           </label>
           <label className="form-label">
-            max_daily_volume_usd
+            {t("leaders.maxDailyVolumeUsd")}
             <input
               type="number"
               step="1"
@@ -228,7 +228,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
             />
           </label>
           <label className="form-label">
-            min_price
+            {t("leaders.minPrice")}
             <input
               type="number"
               step="0.01"
@@ -239,7 +239,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
             />
           </label>
           <label className="form-label">
-            max_price
+            {t("leaders.maxPrice")}
             <input
               type="number"
               step="0.01"
@@ -258,7 +258,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
               checked={form.sideBuy}
               onChange={(e) => set("sideBuy", e.target.checked)}
             />
-            BUY
+            {t("leaders.sideBuy")}
           </label>
           <label className="form-check">
             <input
@@ -266,7 +266,7 @@ export function LeaderForm({ initial, isEdit }: Props) {
               checked={form.sideSell}
               onChange={(e) => set("sideSell", e.target.checked)}
             />
-            SELL
+            {t("leaders.sideSell")}
           </label>
         </div>
       </details>

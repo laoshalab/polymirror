@@ -8,7 +8,7 @@
 import { Wallet, utils } from "ethers";
 import { createPublicClient, type ApiKeyCreds } from "@polymarket/client";
 import { createOrDeriveApiKey } from "@polymarket/client/actions";
-import type { EvmSignature } from "@polymarket/types";
+import type { EvmAddress, EvmSignature } from "@polymarket/types";
 import { ensureUndiciGlobalProxy } from "../util/proxy.js";
 
 const CLOBAUTH_TYPE_STRING =
@@ -134,7 +134,7 @@ export async function deriveDepositWalletClobCredentials(
 
   const client = createPublicClient();
   return createOrDeriveApiKey(client, {
-    address: depositWallet,
+    address: depositWallet as EvmAddress,
     nonce,
     signature: wrapped as EvmSignature,
     timestamp,

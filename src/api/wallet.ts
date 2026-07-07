@@ -72,6 +72,8 @@ async function fetchPolymarketPositions(address: string): Promise<PolymarketPosi
   return page.items.map((p) => mapSdkPosition(p));
 }
 
+import type { TraderDetail } from "./discover.js";
+
 export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccountContext) {
   const config = ctx.getConfig();
   const address = config.wallet.proxyAddress;
@@ -81,11 +83,9 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
 
   let portfolioValue = 0;
   let polymarketPositions: PolymarketPosition[] = [];
-  let profile: Awaited<ReturnType<typeof import("./discover.js").fetchTraderDetail>>["profile"];
-  let recentTrades: Awaited<
-    ReturnType<typeof import("./discover.js").fetchTraderDetail>
-  >["recentTrades"] = [];
-  let rankStats: Awaited<ReturnType<typeof import("./discover.js").fetchTraderDetail>>["rankStats"];
+  let profile: TraderDetail["profile"];
+  let recentTrades: TraderDetail["recentTrades"] = [];
+  let rankStats: TraderDetail["rankStats"];
   let apiError: string | undefined;
   let cashUsd: number | null = null;
   let clobCashUsd: number | null = null;
@@ -111,7 +111,7 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
     const [value, positions, detail, collateral] = await Promise.all([
       fetchPortfolioValue(address),
       fetchPolymarketPositions(address),
-      fetchTraderDetail(address).catch(() => null),
+      fetchTraderDetail(address).then((r) => r.detail).catch(() => null),
       fetchWalletCollateral(config.wallet).catch((e) => {
         collateralError = e instanceof Error ? e.message : String(e);
         return null;
@@ -141,6 +141,11 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
 
   const unrealizedPnl = polymarketPositions.reduce((s, p) => s + (p.cashPnl ?? 0), 0);
   const localExposure = localPositions.reduce((s, p) => s + p.shares * p.avgEntryPrice, 0);
+  let previewCashUsd: number | undefined;
+  if (config.app.global.previewMode) {
+    store.ensurePreviewCash(config.app.global.risk.startingCapitalUsd);
+    previewCashUsd = store.getPreviewCashUsd();
+  }
 
   return {
     accountId: ctx.accountId,
@@ -164,6 +169,7 @@ export async function buildWalletProfile(ctx: import("./routes.js").LegacyAccoun
       todayCopyCount: today?.copyCount ?? 0,
       localPositionCount: localPositions.length,
       localExposureUsd: localExposure,
+      previewCashUsd,
       killSwitchActive: store.isKillSwitchActive(),
     },
     polymarketPositions,

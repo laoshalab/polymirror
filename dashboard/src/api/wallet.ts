@@ -26,6 +26,7 @@ export interface WalletProfile {
     todayCopyCount: number;
     localPositionCount: number;
     localExposureUsd: number;
+    previewCashUsd?: number;
     killSwitchActive: boolean;
   };
   polymarketPositions: {

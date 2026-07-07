@@ -1,6 +1,7 @@
 import type { DiscoverCategory, DiscoverOrderBy, DiscoverTimePeriod } from "./discover-types.js";
 import { getPublicClient } from "../sdk/public-client.js";
 import { getActivity, type Activity } from "../monitor/data-api.js";
+import { logInfo } from "../notify/logger.js";
 
 export type { DiscoverCategory, DiscoverOrderBy, DiscoverTimePeriod };
 
@@ -129,6 +130,14 @@ export interface TraderDetail {
   tradeCount24h: number;
 }
 
+interface TraderDetailCacheEntry {
+  at: number;
+  detail: TraderDetail;
+}
+
+const traderDetailCache = new Map<string, TraderDetailCacheEntry>();
+export const TRADER_DETAIL_CACHE_TTL_MS = CACHE_MS;
+
 function mapActivityItem(a: Activity): TraderActivityItem {
   return {
     timestamp: a.timestamp,
@@ -188,12 +197,7 @@ async function fetchSdkProfile(address: string): Promise<TraderProfile | undefin
   }
 }
 
-export async function fetchTraderDetail(address: string): Promise<TraderDetail> {
-  const normalized = address.trim();
-  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) {
-    throw new Error("Invalid address");
-  }
-
+async function buildTraderDetailUncached(normalized: string): Promise<TraderDetail> {
   const [recentTrades, rankStats, profile] = await Promise.all([
     fetchTraderActivity(normalized),
     fetchTraderRankStats(normalized),
@@ -219,4 +223,42 @@ export async function fetchTraderDetail(address: string): Promise<TraderDetail> 
     recentTrades,
     tradeCount24h,
   };
+}
+
+export async function fetchTraderDetail(
+  address: string
+): Promise<{ detail: TraderDetail; cached: boolean }> {
+  const normalized = address.trim();
+  if (!/^0x[a-fA-F0-9]{40}$/.test(normalized)) {
+    throw new Error("Invalid address");
+  }
+
+  const cacheKey = normalized.toLowerCase();
+  const hit = traderDetailCache.get(cacheKey);
+  const now = Date.now();
+
+  if (hit && now - hit.at < CACHE_MS) {
+    return { detail: hit.detail, cached: true };
+  }
+
+  try {
+    const detail = await buildTraderDetailUncached(normalized);
+    traderDetailCache.set(cacheKey, { at: now, detail });
+    return { detail, cached: false };
+  } catch (e) {
+    if (hit) {
+      const msg = e instanceof Error ? e.message : String(e);
+      logInfo("Trader detail fetch failed — using stale cache", {
+        address: normalized.slice(0, 10),
+        ageMs: now - hit.at,
+        error: msg,
+      });
+      return { detail: hit.detail, cached: true };
+    }
+    throw e;
+  }
+}
+
+export function resetTraderDetailCache(): void {
+  traderDetailCache.clear();
 }

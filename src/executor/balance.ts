@@ -301,14 +301,70 @@ export interface LiveSellAllowanceCheck {
   reason?: string;
 }
 
-/** Pre-flight conditional token balance + allowance before a live SELL. */
-export async function checkLiveSellTokenAllowance(
+export interface ConditionalTokenSnapshot {
+  balance: number;
+  allowance: number;
+}
+
+export interface TokenBalanceFetchOptions {
+  /** Sync CLOB cache before read (use before placing orders). Default false. */
+  refresh?: boolean;
+  retries?: number;
+  cache?: TokenBalanceCache;
+}
+
+/** Per poll-cycle cache — dedupes in-flight and completed CLOB balance reads. */
+export class TokenBalanceCache {
+  private readonly entries = new Map<string, Promise<ConditionalTokenSnapshot | null>>();
+
+  private key(tokenId: string, refresh: boolean): string {
+    return `${tokenId}:r${refresh ? 1 : 0}`;
+  }
+
+  get(tokenId: string, refresh: boolean): Promise<ConditionalTokenSnapshot | null> | undefined {
+    return this.entries.get(this.key(tokenId, refresh));
+  }
+
+  set(tokenId: string, refresh: boolean, p: Promise<ConditionalTokenSnapshot | null>): void {
+    this.entries.set(this.key(tokenId, refresh), p);
+  }
+}
+
+const BALANCE_FETCH_CONCURRENCY = 2;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((r) => setTimeout(r, ms));
+}
+
+function isRetryableBalanceError(e: unknown): boolean {
+  const msg = e instanceof Error ? e.message : String(e);
+  return /timed out|fetch failed|ECONNRESET|ETIMEDOUT|503|502|429/i.test(msg);
+}
+
+async function withBalanceRetries<T>(fn: () => Promise<T>, retries: number): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastError = e;
+      if (attempt < retries && isRetryableBalanceError(e)) {
+        await sleep(400 * (attempt + 1));
+        continue;
+      }
+      throw e;
+    }
+  }
+  throw lastError ?? new Error("balance fetch failed");
+}
+
+async function readConditionalTokenSnapshot(
   wallet: WalletConfig,
   tokenId: string,
-  requiredShares: number
-): Promise<LiveSellAllowanceCheck> {
-  try {
-    const client = await getSecureClient(wallet);
+  refresh: boolean
+): Promise<ConditionalTokenSnapshot> {
+  const client = await getSecureClient(wallet);
+  if (refresh) {
     try {
       await updateBalanceAllowance(client, {
         assetType: AssetType.CONDITIONAL,
@@ -317,54 +373,95 @@ export async function checkLiveSellTokenAllowance(
     } catch {
       /* refresh is best-effort */
     }
-    const resp = await fetchBalanceAllowance(client, {
-      assetType: AssetType.CONDITIONAL,
-      tokenId,
-    });
-    const balance =
-      Math.round(parseSdkBalanceUsd(resp.balance) * 100) / 100;
-    const allowance = parseConditionalAllowanceUsd(resp.allowances);
+  }
+  const resp = await fetchBalanceAllowance(client, {
+    assetType: AssetType.CONDITIONAL,
+    tokenId,
+  });
+  return {
+    balance: Math.round(parseSdkBalanceUsd(resp.balance) * 100) / 100,
+    allowance: parseConditionalAllowanceUsd(resp.allowances),
+  };
+}
 
-    if (balance + 0.01 < requiredShares) {
-      return {
-        allow: false,
-        reason: `token balance ${balance.toFixed(2)} < need ${requiredShares.toFixed(2)}`,
-      };
+/** Fetch conditional token balance + allowance from CLOB (cached + retried within a poll cycle). */
+export async function fetchConditionalTokenSnapshot(
+  wallet: WalletConfig,
+  tokenId: string,
+  options: TokenBalanceFetchOptions = {}
+): Promise<ConditionalTokenSnapshot | null> {
+  const refresh = options.refresh ?? false;
+  const retries = options.retries ?? 1;
+  const cache = options.cache;
+
+  const cached = cache?.get(tokenId, refresh);
+  if (cached) return cached;
+
+  const fetchPromise = (async () => {
+    try {
+      return await withBalanceRetries(
+        () => readConditionalTokenSnapshot(wallet, tokenId, refresh),
+        retries
+      );
+    } catch (e) {
+      logError("Wallet balance fetch failed", {
+        token: tokenId.slice(0, 12),
+        error: e instanceof Error ? e.message : String(e),
+      });
+      return null;
     }
-    if (allowance + 0.01 < requiredShares) {
-      return {
-        allow: false,
-        reason: `token allowance ${allowance.toFixed(2)} < need ${requiredShares.toFixed(2)} — approve on polymarket.com`,
-      };
-    }
-    return { allow: true };
-  } catch (e) {
+  })();
+
+  cache?.set(tokenId, refresh, fetchPromise);
+  return fetchPromise;
+}
+
+export function checkLiveSellFromSnapshot(
+  snap: ConditionalTokenSnapshot,
+  requiredShares: number
+): LiveSellAllowanceCheck {
+  if (snap.balance + 0.01 < requiredShares) {
     return {
       allow: false,
-      reason: `token allowance check failed: ${e instanceof Error ? e.message : String(e)}`,
+      reason: `token balance ${snap.balance.toFixed(2)} < need ${requiredShares.toFixed(2)}`,
     };
   }
+  if (snap.allowance + 0.01 < requiredShares) {
+    return {
+      allow: false,
+      reason: `token allowance ${snap.allowance.toFixed(2)} < need ${requiredShares.toFixed(2)} — approve on polymarket.com`,
+    };
+  }
+  return { allow: true };
+}
+
+/** Pre-flight conditional token balance + allowance before a live SELL. */
+export async function checkLiveSellTokenAllowance(
+  wallet: WalletConfig,
+  tokenId: string,
+  requiredShares: number,
+  options: TokenBalanceFetchOptions = {}
+): Promise<LiveSellAllowanceCheck> {
+  const snap = await fetchConditionalTokenSnapshot(wallet, tokenId, {
+    refresh: true,
+    ...options,
+  });
+  if (snap === null) {
+    return {
+      allow: false,
+      reason: "token allowance check failed: CLOB balance unavailable",
+    };
+  }
+  return checkLiveSellFromSnapshot(snap, requiredShares);
 }
 
 export async function fetchWalletTokenBalance(
   wallet: WalletConfig,
-  tokenId: string
+  tokenId: string,
+  options: TokenBalanceFetchOptions = {}
 ): Promise<number | null> {
-  try {
-    const client = await getSecureClient(wallet);
-    const resp = await fetchBalanceAllowance(client, {
-      assetType: AssetType.CONDITIONAL,
-      tokenId,
-    });
-    const raw = parseSdkBalanceUsd(resp.balance);
-    return Math.round(raw * 100) / 100;
-  } catch (e) {
-    logError("Wallet balance fetch failed", {
-      token: tokenId.slice(0, 12),
-      error: e instanceof Error ? e.message : String(e),
-    });
-    return null;
-  }
+  const snap = await fetchConditionalTokenSnapshot(wallet, tokenId, options);
+  return snap?.balance ?? null;
 }
 
 /** Proportional share of on-chain balance allocated to one leader. */
@@ -387,23 +484,55 @@ export interface WalletDrift {
   trackedShares: number;
 }
 
+async function mapConcurrent<T, R>(
+  items: readonly T[],
+  limit: number,
+  fn: (item: T) => Promise<R>
+): Promise<R[]> {
+  if (items.length === 0) return [];
+  const results = new Array<R>(items.length);
+  let nextIndex = 0;
+
+  async function worker(): Promise<void> {
+    for (;;) {
+      const i = nextIndex++;
+      if (i >= items.length) return;
+      results[i] = await fn(items[i]);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(limit, items.length) }, () => worker())
+  );
+  return results;
+}
+
 export async function checkWalletDrifts(
   wallet: WalletConfig,
   tokenIds: string[],
   getTrackedShares: (tokenId: string) => number,
-  tolerance = 0.02
+  tolerance = 0.02,
+  options: TokenBalanceFetchOptions = {}
 ): Promise<WalletDrift[]> {
+  const snapshots = await mapConcurrent(
+    tokenIds,
+    BALANCE_FETCH_CONCURRENCY,
+    (tokenId) =>
+      fetchConditionalTokenSnapshot(wallet, tokenId, {
+        refresh: false,
+        ...options,
+      })
+  );
+
   const drifts: WalletDrift[] = [];
-
-  for (const tokenId of tokenIds) {
-    const walletShares = await fetchWalletTokenBalance(wallet, tokenId);
-    if (walletShares === null) continue;
-
+  for (let i = 0; i < tokenIds.length; i++) {
+    const snap = snapshots[i];
+    if (snap === null) continue;
+    const tokenId = tokenIds[i];
     const trackedShares = getTrackedShares(tokenId);
-    if (Math.abs(walletShares - trackedShares) > tolerance) {
-      drifts.push({ tokenId, walletShares, trackedShares });
+    if (Math.abs(snap.balance - trackedShares) > tolerance) {
+      drifts.push({ tokenId, walletShares: snap.balance, trackedShares });
     }
   }
-
   return drifts;
 }

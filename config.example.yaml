@@ -55,6 +55,7 @@ global:
     network_retry_limit: 3
     gtc_fill_timeout_ms: 10000
     pending_order_max_age_hours: 48
+    auto_redeem_on_chain: true    # Live: redeem resolved positions on-chain via Relayer (set false for local-only)
 
   conflict:
     mode: priority_leader

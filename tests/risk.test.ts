@@ -33,6 +33,7 @@ const globalBase: GlobalConfig = {
     networkRetryLimit: 3,
     gtcFillTimeoutMs: 10000,
     pendingOrderMaxAgeHours: 48,
+    autoRedeemOnChain: true,
   },
   conflict: { mode: "priority_leader", priority: [] },
   notify: {
@@ -88,5 +89,28 @@ describe("RiskGate token exposure cap", () => {
     store.applyCopyFill("a", "token-x", "BUY", 100, 0.5);
     const risk = new RiskGate(globalBase, store);
     expect(risk.canAddTokenExposure("token-x", 1000, 0.5).allow).toBe(true);
+  });
+});
+
+describe("RiskGate daily volume cap", () => {
+  it("blocks BUY when global daily volume exceeded", () => {
+    store.addDailyVolume(1999);
+    const risk = new RiskGate(globalBase, store);
+    expect(risk.canSpendUsd("whale", 5, "BUY").allow).toBe(false);
+  });
+
+  it("allows SELL even when daily BUY volume is at cap", () => {
+    store.addDailyVolume(2000);
+    const risk = new RiskGate(globalBase, store);
+    expect(risk.canSpendUsd("whale", 50, "SELL").allow).toBe(true);
+  });
+});
+
+describe("RiskGate preview cash", () => {
+  it("blocks BUY when preview cash insufficient", () => {
+    store.ensurePreviewCash(100);
+    store.adjustPreviewCash(-95);
+    const risk = new RiskGate(globalBase, store);
+    expect(risk.canAffordPreviewBuy(10, 100).allow).toBe(false);
   });
 });

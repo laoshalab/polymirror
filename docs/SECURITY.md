@@ -56,6 +56,10 @@ npm audit --audit-level=critical  # passes on v1.0.0
 
 CI runs `npm audit --audit-level=critical`.
 
+## Future: Web + Agent deployment
+
+v1.0 is **self-hosted** (private key in local `.env`). A planned **Web + Agent** model keeps signing on the user’s device (Keychain / local Agent) while the cloud hosts only config and read-only telemetry — see [WEB_AGENT_ARCHITECTURE.md](WEB_AGENT_ARCHITECTURE.md).
+
 ## Reporting
 
 If you find a security issue in PolyMirror itself, open a private report to the maintainer (do not post private keys in public issues).

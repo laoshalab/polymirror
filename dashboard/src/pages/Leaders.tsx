@@ -53,12 +53,12 @@ export function LeadersPage() {
         <table>
           <thead>
             <tr>
-              <th>ID</th>
+              <th>{t("table.id")}</th>
               <th>{t("table.address")}</th>
               <th>{t("common.enabled")}</th>
               <th>{t("leaders.ratioLabel")} / {t("leaders.capLabel")}</th>
-              <th>strategy</th>
-              <th>weight</th>
+              <th>{t("table.strategy")}</th>
+              <th>{t("leaders.weightLabel")}</th>
               <th>{t("table.volume")}</th>
               <th></th>
             </tr>
@@ -94,7 +94,10 @@ export function LeadersPage() {
                   <ToggleSwitch
                     checked={l.enabled}
                     disabled={toggle.isPending}
-                    label={`${l.enabled ? t("common.disabled") : t("common.enabled")} Leader ${l.id}`}
+                    label={t("leaders.toggleLeader", {
+                      action: l.enabled ? t("common.disabled") : t("common.enabled"),
+                      id: l.id,
+                    })}
                     onChange={(enabled) => toggle.mutate({ id: l.id, enabled })}
                   />
                 </td>

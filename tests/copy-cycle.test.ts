@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { StateStore } from "../src/state/store.js";
 import { runCopyCycle } from "../src/engine/copy-cycle.js";
+import { processSettlements } from "../src/engine/settlement.js";
 import { pollLeaders } from "../src/monitor/poll.js";
 import { tradeEventKey } from "../src/monitor/data-api.js";
 import { previewRuntimeConfig, testActivity, testLeader } from "./helpers/fixtures.js";
@@ -12,6 +13,16 @@ vi.mock("../src/monitor/poll.js", () => ({
   pollLeaders: vi.fn(),
 }));
 
+vi.mock("../src/engine/settlement.js", () => ({
+  processSettlements: vi.fn(async () => ({
+    leaderRedeems: 0,
+    autoSettled: 0,
+    onChainRedeems: 0,
+    errors: [],
+  })),
+}));
+
+const mockProcessSettlements = vi.mocked(processSettlements);
 const mockPollLeaders = vi.mocked(pollLeaders);
 
 let dir: string;
@@ -21,6 +32,7 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "pm-copy-cycle-"));
   store = new StateStore(join(dir, "test.db"));
   mockPollLeaders.mockReset();
+  mockProcessSettlements.mockClear();
 });
 
 afterEach(() => {
@@ -44,6 +56,7 @@ describe("runCopyCycle", () => {
     expect(store.getPosition("whale", activity.asset!)).toBe(10);
     expect(store.hasSeen(tradeEventKey(activity))).toBe(true);
     expect(store.getDailyVolumeUsd()).toBe(5);
+    expect(store.getPreviewCashUsd()).toBe(495);
   });
 
   it("skips already-seen trades on the next cycle", async () => {
@@ -100,5 +113,25 @@ describe("runCopyCycle", () => {
     const result = await runCopyCycle(config, store);
 
     expect(result.copied).toBe(0);
+  });
+
+  it("runs settlement even when copy trading is disabled", async () => {
+    const config = previewRuntimeConfig();
+    config.app.global.risk.enableCopyTrading = false;
+    mockPollLeaders.mockResolvedValue([]);
+
+    await runCopyCycle(config, store);
+
+    expect(mockProcessSettlements).toHaveBeenCalledTimes(1);
+  });
+
+  it("runs settlement when kill switch is active", async () => {
+    const config = previewRuntimeConfig();
+    store.triggerKillSwitch();
+    mockPollLeaders.mockResolvedValue([]);
+
+    await runCopyCycle(config, store);
+
+    expect(mockProcessSettlements).toHaveBeenCalledTimes(1);
   });
 });

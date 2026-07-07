@@ -368,7 +368,7 @@ async function handleDiscoverTrader(
     return { status: 400, body: { error: "address query param required" } };
   }
   try {
-    const detail = await fetchTraderDetail(address);
+    const { detail, cached } = await fetchTraderDetail(address);
     const actx = ctx.manager.toApiContext(accountId);
     const leaders = actx.getConfig().app.leaders;
     const userName = detail.profile?.userName ?? detail.rankStats?.userName;
@@ -377,6 +377,7 @@ async function handleDiscoverTrader(
       status: 200,
       body: {
         ...detail,
+        cached,
         suggestedId: suggestLeaderId(userName, detail.address),
         following: Boolean(followingLeaderId),
         followingLeaderId,

@@ -2,9 +2,10 @@ import type { RuntimeConfig } from "../config/types.js";
 import type { StateStore } from "../state/store.js";
 import { ClobExecutor } from "../executor/clob.js";
 import {
-  checkLiveSellTokenAllowance,
-  fetchWalletTokenBalance,
+  checkLiveSellFromSnapshot,
+  fetchConditionalTokenSnapshot,
   proportionalSellable,
+  TokenBalanceCache,
 } from "../executor/balance.js";
 import { fetchBestExecutablePrice } from "../executor/orderbook.js";
 import { fetchGeoblockStatus, formatGeoblockMessage } from "../executor/geoblock.js";
@@ -58,16 +59,27 @@ export async function liquidateLeaderPositions(
   let skipped = 0;
   let failed = 0;
   const errors: string[] = [];
+  const tokenBalanceCache = !preview && global.risk.syncWalletBalance
+    ? new TokenBalanceCache()
+    : undefined;
+  const balanceFetchOpts = {
+    cache: tokenBalanceCache,
+    retries: Math.min(global.execution.networkRetryLimit, 1),
+  };
 
   for (const pos of positions) {
     attempted++;
     let sellable = pos.shares;
+    let sellSnap: Awaited<ReturnType<typeof fetchConditionalTokenSnapshot>> = null;
 
     if (!preview && global.risk.syncWalletBalance) {
-      const walletShares = await fetchWalletTokenBalance(config.wallet, pos.tokenId);
-      if (walletShares !== null) {
+      sellSnap = await fetchConditionalTokenSnapshot(config.wallet, pos.tokenId, {
+        refresh: true,
+        ...balanceFetchOpts,
+      });
+      if (sellSnap !== null) {
         const totalTracked = store.getTotalTokenShares(pos.tokenId);
-        sellable = proportionalSellable(pos.shares, walletShares, totalTracked);
+        sellable = proportionalSellable(pos.shares, sellSnap.balance, totalTracked);
       }
     }
 
@@ -101,7 +113,15 @@ export async function liquidateLeaderPositions(
     }
 
     if (!preview) {
-      const allowance = await checkLiveSellTokenAllowance(config.wallet, pos.tokenId, sellable);
+      if (sellSnap === null) {
+        sellSnap = await fetchConditionalTokenSnapshot(config.wallet, pos.tokenId, {
+          refresh: true,
+          ...balanceFetchOpts,
+        });
+      }
+      const allowance = sellSnap
+        ? checkLiveSellFromSnapshot(sellSnap, sellable)
+        : { allow: false as const, reason: "CLOB balance unavailable" };
       if (!allowance.allow) {
         failed++;
         errors.push(`${pos.tokenId.slice(0, 12)}: ${allowance.reason ?? "allowance"}`);

@@ -70,6 +70,7 @@ function liveConfig(enableCopy: boolean): RuntimeConfig {
           networkRetryLimit: 3,
           gtcFillTimeoutMs: 10_000,
           pendingOrderMaxAgeHours: 48,
+          autoRedeemOnChain: true,
         },
         conflict: { mode: "priority_leader", priority: [] },
         notify: {
@@ -124,5 +125,27 @@ describe("runCopyCycle pending reconciliation", () => {
     expect(result.copied).toBe(0);
     expect(store.countPendingOrders()).toBe(0);
     expect(result.errors.some((e) => e.includes("copy trading disabled"))).toBe(true);
+  });
+
+  it("silently skips pending rows on transient status check failure", async () => {
+    store.upsertPendingOrder({
+      orderId: "ord-live-2",
+      leaderId: "whale",
+      tokenId: "tok-b",
+      side: "BUY",
+      price: 0.5,
+      size: 10,
+      filledShares: 0,
+      tradeKey: "k2",
+      reasoning: "10%",
+    });
+    mockGetOrderStatus.mockResolvedValue({
+      kind: "transient",
+      message: "fetch failed",
+    });
+
+    const result = await runCopyCycle(liveConfig(true), store);
+    expect(result.errors.some((e) => e.includes("status check failed"))).toBe(false);
+    expect(store.countPendingOrders()).toBe(1);
   });
 });

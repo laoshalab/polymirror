@@ -41,6 +41,73 @@ describe("StateStore transactions", () => {
     expect(audit.items[0]?.size).toBe(10);
   });
 
+  it("recordCopySuccess SELL does not increment daily volume", () => {
+    store.recordCopySuccess({
+      tradeKey: "trade-sell",
+      leaderId: "whale",
+      tokenId: "tok-a",
+      side: "SELL",
+      filledShares: 4,
+      price: 0.6,
+      filledUsd: 2.4,
+      auditReason: "sell",
+      preview: false,
+    });
+
+    expect(store.getDailyVolumeUsd()).toBe(0);
+  });
+
+  it("preview BUY deducts and SELL returns simulated cash", () => {
+    store.ensurePreviewCash(100);
+    store.recordCopySuccess({
+      tradeKey: "trade-buy",
+      leaderId: "whale",
+      tokenId: "tok-a",
+      side: "BUY",
+      filledShares: 10,
+      price: 0.5,
+      filledUsd: 5,
+      auditReason: "buy",
+      preview: true,
+    });
+    expect(store.getPreviewCashUsd()).toBe(95);
+    expect(store.getPosition("whale", "tok-a")).toBe(10);
+
+    store.recordCopySuccess({
+      tradeKey: "trade-sell2",
+      leaderId: "whale",
+      tokenId: "tok-a",
+      side: "SELL",
+      filledShares: 10,
+      price: 0.6,
+      filledUsd: 6,
+      auditReason: "sell",
+      preview: true,
+    });
+    expect(store.getPreviewCashUsd()).toBe(101);
+    expect(store.getPosition("whale", "tok-a")).toBe(0);
+  });
+
+  it("recordRedeemSettlement clears position and credits preview cash", () => {
+    store.ensurePreviewCash(100);
+    store.applyCopyFill("whale", "tok-a", "BUY", 10, 0.4);
+    store.adjustPreviewCash(-4);
+
+    const ok = store.recordRedeemSettlement({
+      tradeKey: "redeem-1",
+      leaderId: "whale",
+      tokenId: "tok-a",
+      payoutUsd: 10,
+      preview: true,
+      auditReason: "winner redeem",
+    });
+
+    expect(ok).toBe(true);
+    expect(store.getPosition("whale", "tok-a")).toBe(0);
+    expect(store.getPreviewCashUsd()).toBe(106);
+    expect(store.hasSeen("redeem-1")).toBe(true);
+  });
+
   it("recordPendingFill applies partial fill atomically", () => {
     store.recordPendingFill({
       leaderId: "whale",

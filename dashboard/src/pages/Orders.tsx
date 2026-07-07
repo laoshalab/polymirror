@@ -4,6 +4,7 @@ import { cancelPendingOrder } from "../api/orders";
 import { PageHeader } from "../components/ui/PageHeader";
 import { ConfirmModal } from "../components/ui/ConfirmModal";
 import { useToast } from "../components/ui/Toast";
+import { translateApiMessage } from "../i18n/apiMessages";
 import { useT } from "../i18n/I18nProvider";
 import { SideBadge } from "../utils/auditDisplay";
 import { useState } from "react";
@@ -31,7 +32,7 @@ export function OrdersPage() {
   const cancel = useMutation({
     mutationFn: (orderId: string) => cancelPendingOrder(orderId),
     onSuccess: (r) => {
-      toast(r.message ?? t("orders.cancelDone"), "success");
+      toast(translateApiMessage(t, r.message ?? t("orders.cancelDone")), "success");
       void queryClient.invalidateQueries({ queryKey: ["pending-orders"] });
       void queryClient.invalidateQueries({ queryKey: ["status"] });
     },

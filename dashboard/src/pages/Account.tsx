@@ -593,12 +593,18 @@ export function AccountPage() {
             )}
           </div>
 
-          {data.previewMode && data.engine.localPositionCount > 0 && (
+          {data.previewMode && (
             <>
               <h3 className="account-card-title" style={{ marginTop: "1.25rem" }}>
                 {t("account.previewSimSection")}
               </h3>
               <div className="account-stat-row">
+                <div className="account-stat">
+                  <div className="account-stat-label">{t("account.previewCash")}</div>
+                  <div className="account-stat-value">
+                    ${(data.engine.previewCashUsd ?? 0).toFixed(2)}
+                  </div>
+                </div>
                 <div className="account-stat">
                   <div className="account-stat-label">{t("account.previewLocalPositions")}</div>
                   <div className="account-stat-value">{data.engine.localPositionCount}</div>
