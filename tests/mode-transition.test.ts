@@ -36,6 +36,7 @@ function minimalConfig(previewMode: boolean, enableCopy = true): RuntimeConfig {
       dataApiUrl: "https://data-api.polymarket.com",
       signatureType: 0,
       tradingBackend: "secure",
+      builderCode: "0x" + "9".repeat(64),
     },
     app: {
       global: {

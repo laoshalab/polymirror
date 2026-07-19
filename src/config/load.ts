@@ -24,6 +24,7 @@ import {
 } from "./document.js";
 import { resolveAccountDbPath } from "../state/db-path.js";
 import { applyProxyFromYaml } from "../util/proxy.js";
+import { POLYMARKET_BUILDER_CODE } from "./builder.js";
 
 export {
   appConfigSchema,
@@ -171,6 +172,7 @@ export function loadWalletConfig(walletEnv = ""): WalletConfig {
     tradingBackend,
     relayerApiKey,
     relayerApiKeyAddress,
+    builderCode: POLYMARKET_BUILDER_CODE,
   };
 }
 
@@ -424,6 +426,11 @@ export function validateRuntime(config: RuntimeConfig): string | null {
   ) {
     console.warn(
       "Warning: RELAYER_API_KEY not set — required for first-time approval setup and relayer-deployed wallets."
+    );
+  }
+  if (!app.global.previewMode) {
+    console.info(
+      `Builder code: ${wallet.builderCode.slice(0, 10)}… (orders include builder attribution)`
     );
   }
   if (!app.global.previewMode && app.global.risk.slippageTolerance <= 0) {

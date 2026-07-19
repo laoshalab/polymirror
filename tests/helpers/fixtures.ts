@@ -1,4 +1,5 @@
 import type { Activity } from "../src/monitor/data-api.js";
+import { POLYMARKET_BUILDER_CODE } from "../src/config/builder.js";
 import type { LeaderConfig, RuntimeConfig } from "../src/config/types.js";
 
 export function testActivity(overrides: Partial<Activity> = {}): Activity {
@@ -39,6 +40,7 @@ export function previewRuntimeConfig(
       clobUrl: "https://clob.polymarket.com",
       dataApiUrl: "https://data-api.polymarket.com",
       tradingBackend: "secure",
+      builderCode: POLYMARKET_BUILDER_CODE,
     },
     app: {
       global: {

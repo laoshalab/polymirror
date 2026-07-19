@@ -152,6 +152,7 @@ describe("processSettlements", () => {
       chainId: 137,
       clobUrl: "https://clob.polymarket.com",
       tradingBackend: "secure" as const,
+      builderCode: "0x" + "9".repeat(64),
     };
 
     const result = await processSettlements(registry, liveGlobal, store, false, { wallet });
@@ -206,6 +207,7 @@ describe("processSettlements", () => {
       chainId: 137,
       clobUrl: "https://clob.polymarket.com",
       tradingBackend: "secure" as const,
+      builderCode: "0x" + "9".repeat(64),
     };
 
     const result = await processSettlements(registry, liveGlobal, store, false, { wallet });
@@ -271,6 +273,7 @@ describe("processSettlements", () => {
       chainId: 137,
       clobUrl: "https://clob.polymarket.com",
       tradingBackend: "secure" as const,
+      builderCode: "0x" + "9".repeat(64),
     };
 
     const result = await processSettlements(registry, liveGlobalBase, store, false, { wallet });
@@ -337,6 +340,7 @@ describe("processSettlements", () => {
       chainId: 137,
       clobUrl: "https://clob.polymarket.com",
       tradingBackend: "secure" as const,
+      builderCode: "0x" + "9".repeat(64),
     };
 
     const result = await processSettlements(registry, liveGlobalBase, store, false, { wallet });

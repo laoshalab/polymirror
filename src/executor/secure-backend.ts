@@ -51,6 +51,7 @@ export class SecureTradingBackend implements TradingBackend {
     const client = await getSecureClient(this.wallet);
     const side = req.side === "BUY" ? OrderSide.BUY : OrderSide.SELL;
     const price = formatPriceForTick(req.price, req.tickSize);
+    const builderCode = this.wallet.builderCode as `0x${string}`;
 
     if (req.orderType === "GTC") {
       const resp = await client.placeLimitOrder({
@@ -58,6 +59,7 @@ export class SecureTradingBackend implements TradingBackend {
         price,
         size: req.size,
         side,
+        builderCode,
       });
       if (!resp.ok) return { raw: resp, error: resp.message };
       return mapAcceptedResponse(resp);
@@ -71,6 +73,7 @@ export class SecureTradingBackend implements TradingBackend {
         amount: Math.round(parseFloat(price) * req.size * 100) / 100,
         maxPrice: price,
         orderType: sdkOrderType,
+        builderCode,
       });
       if (!resp.ok) return { raw: resp, error: resp.message };
       return mapAcceptedResponse(resp);
@@ -82,6 +85,7 @@ export class SecureTradingBackend implements TradingBackend {
       shares: req.size,
       minPrice: price,
       orderType: sdkOrderType,
+      builderCode,
     });
     if (!resp.ok) return { raw: resp, error: resp.message };
     return mapAcceptedResponse(resp);

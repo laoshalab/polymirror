@@ -37,6 +37,7 @@ describe("redeemConditionOnChain", () => {
         chainId: 137,
         clobUrl: "https://clob.polymarket.com",
         tradingBackend: "secure",
+      builderCode: "0x" + "9".repeat(64),
       },
       "0xcondition"
     );

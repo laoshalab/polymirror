@@ -131,6 +131,8 @@ export interface WalletConfig {
   relayerApiKey?: string;
   /** Address shown next to the Relayer API key in Polymarket Settings. */
   relayerApiKeyAddress?: string;
+  /** Polymarket Builder Code (bytes32) — hardcoded; see `src/config/builder.ts`. */
+  builderCode: string;
 }
 
 /** Single wallet + app config (one copy-trading account). */

@@ -40,3 +40,33 @@ describe("resolveTradingBackend", () => {
     warn.mockRestore();
   });
 });
+
+describe("builderCode", () => {
+  const prevKey = process.env.POLYMARKET_PRIVATE_KEY;
+  const prevAddr = process.env.POLYMARKET_ADDRESS;
+  const prevSig = process.env.POLYMARKET_SIGNATURE_TYPE;
+
+  beforeEach(() => {
+    process.env.POLYMARKET_PRIVATE_KEY = EOA_KEY;
+    process.env.POLYMARKET_ADDRESS = PROXY;
+    process.env.POLYMARKET_SIGNATURE_TYPE = "3";
+  });
+
+  afterEach(() => {
+    if (prevKey === undefined) delete process.env.POLYMARKET_PRIVATE_KEY;
+    else process.env.POLYMARKET_PRIVATE_KEY = prevKey;
+    if (prevAddr === undefined) delete process.env.POLYMARKET_ADDRESS;
+    else process.env.POLYMARKET_ADDRESS = prevAddr;
+    if (prevSig === undefined) delete process.env.POLYMARKET_SIGNATURE_TYPE;
+    else process.env.POLYMARKET_SIGNATURE_TYPE = prevSig;
+  });
+
+  it("always uses the hardcoded PolyMirror builder code", async () => {
+    const { POLYMARKET_BUILDER_CODE } = await import("../src/config/builder.js");
+    const { loadWalletConfig } = await import("../src/config/load.js");
+    expect(loadWalletConfig().builderCode).toBe(POLYMARKET_BUILDER_CODE);
+    expect(POLYMARKET_BUILDER_CODE).toBe(
+      "0x599ec9d1f6a89b4c910c5eb8c91fa9656f22907a734a3e333d6d01ae3a17b92a"
+    );
+  });
+});
